@@ -101,7 +101,25 @@
 </head>
 <body>
     <div class="container">
-        <h1>SpeechKit Streaming Recognition</h1>
+        <h1>Live Translate — панель оператора</h1>
+        <section id="operator" style="background:#eef3f9;padding:18px;border-radius:8px">
+            <label for="direction">Направление перевода:</label>
+            <select id="direction" style="padding:8px;margin:6px">
+                <option value="ru-en">Русский → English</option>
+                <option value="en-ru">English → Русский</option>
+            </select>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
+                <button id="hideCaptions" type="button">Скрыть</button>
+                <button id="showCaptions" type="button">Показать</button>
+                <button id="clearCaptions" type="button">Очистить</button>
+                <button id="demoCaptions" type="button">Демо</button>
+            </div>
+            <p><a href="/screen" target="_blank" rel="noopener">Экран субтитров ↗</a> ·
+               <a href="/screen?transparent=1" target="_blank" rel="noopener">Прозрачный слой для OBS ↗</a></p>
+            <strong>Перевод на экране:</strong>
+            <p id="translated" style="font-size:22px;min-height:48px"></p>
+            <small id="translationStatus" role="status">Подключение...</small>
+        </section>
         
         <div class="controls">
             <button id="startButton">Начать запись</button>
@@ -122,6 +140,50 @@
         </div>
     </div>
 
+    <script>
+    (() => {
+        const direction = document.getElementById('direction');
+        const preview = document.getElementById('translated');
+        const status = document.getElementById('translationStatus');
+        let lastSequence = -1;
+        async function command(action, value) {
+            try {
+                const body = {action};
+                if (action === 'language') body.language = value;
+                if (action === 'visible') body.visible = value;
+                const res = await fetch('/api/control', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Request failed');
+                update(data);
+            } catch(e) { status.textContent = 'Ошибка: ' + e.message; }
+        }
+        function update(data) {
+            if (data.sequence === lastSequence) return;
+            lastSequence = data.sequence;
+            direction.value = data.language;
+            preview.textContent = data.text || '—';
+            status.textContent = (data.visible ? 'Показ включён' : 'Субтитры скрыты') +
+                ' · ' + data.status + (data.error ? ' · ' + data.error : '');
+        }
+        direction.addEventListener('change', () => command('language', direction.value));
+        document.getElementById('hideCaptions').onclick = () => command('visible',false);
+        document.getElementById('showCaptions').onclick = () => command('visible',true);
+        document.getElementById('clearCaptions').onclick = () => command('clear');
+        document.getElementById('demoCaptions').onclick = () => command('demo');
+        async function poll() {
+            try {
+                const res = await fetch('/api/state', {cache:'no-store'});
+                if (!res.ok) throw new Error('Offline');
+                update(await res.json());
+            } catch(e) { status.textContent = 'Нет связи: ' + e.message; }
+        }
+        poll();
+        setInterval(poll, 500);
+    })();
+    </script>
     <script>
         let websocket = null;
         let mediaRecorder = null;
