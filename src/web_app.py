@@ -84,6 +84,9 @@ def handle_websocket():
 
 def process_audio_stream(wsock: WebSocket):
     """Process audio data from WebSocket and send recognition results back."""
+    if not API_KEY:
+        wsock.send(json.dumps({"error": "Set API_KEY to enable live SpeechKit recognition"}))
+        return
     # Setup gRPC connection to Yandex STT
     cred = grpc.ssl_channel_credentials()
     channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
@@ -295,8 +298,7 @@ def main():
     API_KEY = args.api_key or os.environ.get('API_KEY')
     
     if not API_KEY:
-        print("Error: API key must be provided via --api-key argument or API_KEY environment variable")
-        return
+        print("Warning: API_KEY not configured; demo and stage screen work, live STT disabled.")
     
     # Use command line argument if provided, otherwise check environment variable, with a default of 8080
     port = args.port or int(os.environ.get('PORT', 8080))
