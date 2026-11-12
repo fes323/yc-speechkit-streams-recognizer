@@ -1,4 +1,5 @@
 import os
+from live_translation import SUBTITLES
 import json
 import base64
 import argparse
@@ -26,6 +27,45 @@ def index():
     template_path = os.path.join(os.path.dirname(__file__), 'templates', 'index.tpl')
     return template(template_path)
 
+# Operator API and stage screen: localhost only in this MVP.
+@app.route('/screen')
+def stage_screen():
+    return template(os.path.join(os.path.dirname(__file__), 'templates', 'screen.tpl'))
+
+@app.route('/api/state')
+def operator_state():
+    response.content_type = 'application/json'
+    response.set_header('Cache-Control', 'no-store')
+    return json.dumps(SUBTITLES.snapshot(), ensure_ascii=False)
+
+@app.post('/api/control')
+def operator_control():
+    response.content_type = 'application/json'
+    response.set_header('Cache-Control', 'no-store')
+    # Browser-origin protection. Control endpoints must not be exposed publicly.
+    origin = request.get_header('Origin')
+    if origin and origin.rstrip('/') != request.urlparts.scheme + '://' + request.urlparts.netloc:
+        response.status = 403
+        return json.dumps({'error': 'Invalid origin'})
+    try:
+        data = request.json or {}
+        action = data.get('action')
+        if action == 'language':
+            result = SUBTITLES.configure(language=data.get('language'))
+        elif action == 'visible':
+            result = SUBTITLES.configure(visible=data.get('visible'))
+        elif action == 'clear':
+            result = SUBTITLES.configure(clear=True)
+        elif action == 'demo':
+            result = SUBTITLES.demo()
+        else:
+            response.status = 400
+            return json.dumps({'error': 'Unknown action'})
+        return json.dumps(result, ensure_ascii=False)
+    except ValueError as exc:
+        response.status = 400
+        return json.dumps({'error': str(exc)})
+
 # WebSocket endpoint for audio streaming
 @app.route('/ws')
 def handle_websocket():
@@ -44,6 +84,9 @@ def handle_websocket():
 
 def process_audio_stream(wsock: WebSocket):
     """Process audio data from WebSocket and send recognition results back."""
+    if not API_KEY:
+        wsock.send(json.dumps({"error": "Set API_KEY to enable live SpeechKit recognition"}))
+        return
     # Setup gRPC connection to Yandex STT
     cred = grpc.ssl_channel_credentials()
     channel = grpc.secure_channel('stt.api.cloud.yandex.net:443', cred)
@@ -144,6 +187,11 @@ def process_audio_stream(wsock: WebSocket):
                     
                     print(f"Received response: type={event_type}, alternatives={alternatives}")
                     
+                    # Translate only stable final phrases, not changing partial results.
+                    # This keeps usage predictable and avoids flickering subtitles.
+                    if event_type == 'final' and alternatives and alternatives[0].strip():
+                        SUBTITLES.publish(alternatives[0])
+
                     # Send the result to the client
                     if alternatives is not None:
                         wsock.send(json.dumps({
@@ -250,8 +298,7 @@ def main():
     API_KEY = args.api_key or os.environ.get('API_KEY')
     
     if not API_KEY:
-        print("Error: API key must be provided via --api-key argument or API_KEY environment variable")
-        return
+        print("Warning: API_KEY not configured; demo and stage screen work, live STT disabled.")
     
     # Use command line argument if provided, otherwise check environment variable, with a default of 8080
     port = args.port or int(os.environ.get('PORT', 8080))
@@ -263,7 +310,7 @@ def main():
     
     # Start the web server
     print(f"Starting web server on http://localhost:{port}")
-    server = WSGIServer(('0.0.0.0', port), app, handler_class=WebSocketHandler)
+    server = WSGIServer(('127.0.0.1', port), app, handler_class=WebSocketHandler)
     server.serve_forever()
 
 if __name__ == '__main__':

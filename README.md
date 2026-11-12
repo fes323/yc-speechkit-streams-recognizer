@@ -1,3 +1,9 @@
+# SpeechKit Stream Recognizer + Live Translate (fork)
+
+> This fork includes a conference subtitle MVP: SpeechKit → Yandex Translate → operator controls → LED/OBS screen.
+> [Инструкция и ограничения по запуску](docs/LIVE_TRANSLATION.md).
+> Work is being developed in the `feature/live-translation-subtitles` branch. The upstream recognizer remains intact in `main`.
+
 # SpeechKit Stream Recognizer
 
 <img src="docs/img/title.png" width="600px" alt="Процесс распознавания длинных аудио файлов" />
