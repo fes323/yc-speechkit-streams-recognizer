@@ -58,6 +58,7 @@ class LiveSubtitles:
                     raise ValueError("visible must be boolean")
                 self.visible = visible
             if clear:
+                self.generation += 1
                 self.text = ""
                 self.original = ""
                 self.error = ""
